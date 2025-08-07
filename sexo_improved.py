@@ -5,27 +5,196 @@ import os
 import signal
 import threading
 import logging
+import colorsys
 from PIL import Image
 import requests
-from typing import Tuple, Optional, Dict, List
+from typing import Tuple, Optional, Dict, List, Any
 from dataclasses import dataclass, asdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 
-# Import do sistema de droplets
-try:
-    from droplet_monitor import AutoDropletManager
-except ImportError:
-    print("⚠️ Sistema de droplets não disponível. Instalando dependências...")
-    AutoDropletManager = None
+# Sistema de droplets integrado
+@dataclass
+class UserInfo:
+    """Informações do usuário do Wplace."""
+    id: int
+    name: str
+    email: str
+    droplets: int
+    charges: Dict[str, Any]
+    level: float
+    pixels_painted: int
 
-# Import do sistema de cores compatível com Termux
-try:
-    from color_detector_termux import TermuxColorDetector, WPLACE_PALETTE
-except ImportError:
-    print("⚠️ Sistema de cores não disponível. Usando sistema básico...")
-    TermuxColorDetector = None
-    WPLACE_PALETTE = COLOR_PALETTE
+class DropletMonitor:
+    """Monitor de droplets com compra automática."""
+    
+    def __init__(self, cookie: str):
+        self.cookie = cookie
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36",
+            'Accept-Encoding': "gzip, deflate, br, zstd",
+            'sec-ch-ua-platform': '"Android"',
+            'sec-ch-ua': '"Not;A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
+            'sec-ch-ua-mobile': "?1",
+            'origin': "https://wplace.live",
+            'sec-fetch-site': "same-site",
+            'sec-fetch-mode': "cors",
+            'sec-fetch-dest': "empty",
+            'referer': "https://wplace.live/",
+            'accept-language': "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+            'priority': "u=1, i",
+            'Cookie': cookie
+        })
+    
+    def get_user_info(self) -> Optional[UserInfo]:
+        """Obtém informações do usuário."""
+        try:
+            url = "https://backend.wplace.live/me"
+            response = self.session.get(url)
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                user_info = UserInfo(
+                    id=data.get('id', 0),
+                    name=data.get('name', ''),
+                    email=data.get('email', ''),
+                    droplets=data.get('droplets', 0),
+                    charges=data.get('charges', {}),
+                    level=data.get('level', 0.0),
+                    pixels_painted=data.get('pixelsPainted', 0)
+                )
+                
+                logger.info(f"Usuário: {user_info.name} | Droplets: {user_info.droplets} | Level: {user_info.level:.2f}")
+                return user_info
+            else:
+                logger.error(f"Erro ao obter informações do usuário: {response.status_code}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Erro ao obter informações do usuário: {e}")
+            return None
+    
+    def purchase_droplets(self, amount: int = 1) -> bool:
+        """Compra droplets automaticamente."""
+        try:
+            url = "https://backend.wplace.live/purchase"
+            
+            payload = json.dumps({
+                "product": {
+                    "id": 80,  # ID do produto droplets
+                    "amount": amount
+                }
+            })
+            
+            headers = {
+                'Content-Type': "text/plain;charset=UTF-8",
+                **self.session.headers
+            }
+            
+            response = self.session.post(url, data=payload, headers=headers)
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"✅ Compra realizada com sucesso! Resposta: {result}")
+                return True
+            else:
+                logger.error(f"❌ Erro na compra: {response.status_code} - {response.text}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Erro ao realizar compra: {e}")
+            return False
+
+class AutoDropletManager:
+    """Gerenciador automático de droplets integrado ao sistema de pintura."""
+    
+    def __init__(self, cookie: str):
+        self.monitor = DropletMonitor(cookie)
+        self.target_droplets = 500
+        self.check_interval = 30
+        self.is_monitoring = False
+    
+    def check_and_buy_if_needed(self) -> bool:
+        """Verifica e compra droplets se necessário."""
+        user_info = self.monitor.get_user_info()
+        
+        if user_info and user_info.droplets < self.target_droplets:
+            logger.warning(f"⚠️ Droplets baixos: {user_info.droplets} < {self.target_droplets}")
+            logger.info("🛒 Tentando comprar droplets...")
+            
+            return self.monitor.purchase_droplets()
+        
+        return True
+    
+    def get_current_droplets(self) -> int:
+        """Obtém quantidade atual de droplets."""
+        user_info = self.monitor.get_user_info()
+        return user_info.droplets if user_info else 0
+
+# Sistema de detecção de cores compatível com Termux
+class TermuxColorDetector:
+    """Sistema de detecção de cores otimizado para Termux."""
+    
+    def __init__(self):
+        self.color_cache = {}
+    
+    def rgb_to_hsv(self, rgb: Tuple[int, int, int]) -> Tuple[float, float, float]:
+        """Converte RGB para HSV."""
+        r, g, b = rgb[0]/255.0, rgb[1]/255.0, rgb[2]/255.0
+        return colorsys.rgb_to_hsv(r, g, b)
+    
+    def find_best_color_match(self, target_rgb: Tuple[int, int, int], 
+                             palette: Dict[Tuple[int, int, int], int]) -> int:
+        """Encontra a melhor correspondência de cor usando múltiplos métodos."""
+        
+        # Cache para evitar recálculos
+        cache_key = (target_rgb, tuple(sorted(palette.keys())))
+        if cache_key in self.color_cache:
+            return self.color_cache[cache_key]
+        
+        # Método 1: Correspondência exata
+        if target_rgb in palette:
+            self.color_cache[cache_key] = palette[target_rgb]
+            return palette[target_rgb]
+        
+        # Método 2: Distância Euclidiana em RGB
+        min_distance_rgb = float('inf')
+        best_index_rgb = 0
+        
+        # Método 3: Distância em HSV (mais perceptualmente precisa)
+        min_distance_hsv = float('inf')
+        best_index_hsv = 0
+        
+        target_hsv = self.rgb_to_hsv(target_rgb)
+        
+        for palette_rgb, index in palette.items():
+            # Distância RGB
+            rgb_distance = sum((a - b) ** 2 for a, b in zip(target_rgb, palette_rgb))
+            if rgb_distance < min_distance_rgb:
+                min_distance_rgb = rgb_distance
+                best_index_rgb = index
+            
+            # Distância HSV (mais precisa para percepção humana)
+            palette_hsv = self.rgb_to_hsv(palette_rgb)
+            
+            # Normaliza H (hue) para comparação circular
+            h_diff = min(abs(target_hsv[0] - palette_hsv[0]), 
+                        1 - abs(target_hsv[0] - palette_hsv[0]))
+            
+            # Distância HSV ponderada
+            hsv_distance = (h_diff * 2) ** 2 + (target_hsv[1] - palette_hsv[1]) ** 2 + (target_hsv[2] - palette_hsv[2]) ** 2
+            
+            if hsv_distance < min_distance_hsv:
+                min_distance_hsv = hsv_distance
+                best_index_hsv = index
+        
+        # Escolhe o melhor resultado (HSV é geralmente mais preciso)
+        best_index = best_index_hsv if min_distance_hsv < min_distance_rgb * 0.8 else best_index_rgb
+        
+        self.color_cache[cache_key] = best_index
+        return best_index
 
 # Configuração de logging
 logging.basicConfig(
@@ -284,33 +453,11 @@ class WplacePixelPainter:
         })
     
     def rgb_to_color_index(self, rgb: Tuple[int, int, int]) -> int:
-        """Converte RGB para índice da paleta usando sistema compatível com Termux."""
+        """Converte RGB para índice da paleta usando sistema avançado."""
         
-        # Usa sistema avançado se disponível
-        if TermuxColorDetector is not None:
-            # Cria detector temporário
-            detector = TermuxColorDetector()
-            return detector.find_best_color_match(rgb, WPLACE_PALETTE)
-        
-        # Fallback para sistema básico
-        # Tentar correspondência exata primeiro
-        if rgb in COLOR_MAP:
-            return COLOR_MAP[rgb]
-        
-        # Se não encontrar exato, usar a cor mais próxima
-        min_distance = float('inf')
-        best_index = 0
-        
-        for palette_rgb, index in COLOR_PALETTE.items():
-            # Cálculo de distância Euclidiana
-            distance = math.sqrt(sum((a - b) ** 2 for a, b in zip(rgb, palette_rgb)))
-            if distance < min_distance:
-                min_distance = distance
-                best_index = index
-                if min_distance == 0:
-                    break
-        
-        return best_index
+        # Usa sistema avançado de detecção de cores
+        detector = TermuxColorDetector()
+        return detector.find_best_color_match(rgb, COLOR_PALETTE)
     
     def paint_pixel(self, coord: WplaceCoordinate, color_index: int) -> bool:
         """Pinta um pixel no Wplace.live com tratamento de erro 403 e monitoramento de droplets."""
