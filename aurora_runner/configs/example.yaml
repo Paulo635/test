@@ -1,0 +1,22 @@
+name: Example - httpbin json
+allowlist:
+  - httpbin.org
+steps:
+  - name: Fetch JSON
+    request:
+      method: GET
+      url: https://httpbin.org/json
+      headers:
+        User-Agent: AuroraRunner/1.0
+    extract:
+      - type: json
+        path: slideshow.title
+        assign_to: slideshow_title
+    asserts:
+      - type: regex
+        source: text
+        pattern: ".*slideshow.*"
+    save:
+      - type: csv
+        file: results/output.csv
+        fields: [slideshow_title]

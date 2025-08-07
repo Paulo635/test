@@ -1,0 +1,5 @@
+2025-08-07 23:35:16 | INFO | aurora.main | Iniciando: Example - httpbin json
+2025-08-07 23:35:16 | INFO | aurora.runner | Step: Fetch JSON GET https://httpbin.org/json
+2025-08-07 23:35:16 | INFO | aurora.runner | Var 'slideshow_title' = Sample Slide Show
+2025-08-07 23:35:16 | INFO | aurora.runner | Salvo em results/output.csv: {'slideshow_title': 'Sample Slide Show'}
+2025-08-07 23:35:16 | INFO | aurora.main | Concluído com sucesso.
