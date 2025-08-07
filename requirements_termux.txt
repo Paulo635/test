@@ -1,0 +1,4 @@
+# Requisitos para Termux (sem OpenCV)
+Pillow>=10.0.0
+requests>=2.31.0
+colorthief>=0.2.1
