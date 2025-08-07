@@ -8,7 +8,7 @@ import logging
 import colorsys
 from PIL import Image
 import requests
-from typing import Tuple, Optional, Dict, List, Any
+# from typing import Tuple, Optional, Dict, List, Any  # Removido para compatibilidade
 from dataclasses import dataclass, asdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
@@ -21,7 +21,7 @@ class UserInfo:
     name: str
     email: str
     droplets: int
-    charges: Dict[str, Any]
+    charges: dict
     level: float
     pixels_painted: int
 
@@ -47,7 +47,7 @@ class DropletMonitor:
             'Cookie': cookie
         })
     
-    def get_user_info(self) -> Optional[UserInfo]:
+    def get_user_info(self):
         """Obtém informações do usuário."""
         try:
             url = "https://backend.wplace.live/me"
@@ -161,13 +161,12 @@ class TermuxColorDetector:
         self.template_cache = {}
         self.tile_size = 1000  # Tamanho do tile como no Blue Marble
     
-    def rgb_to_hsv(self, rgb: Tuple[int, int, int]) -> Tuple[float, float, float]:
+    def rgb_to_hsv(self, rgb):
         """Converte RGB para HSV."""
         r, g, b = rgb[0]/255.0, rgb[1]/255.0, rgb[2]/255.0
         return colorsys.rgb_to_hsv(r, g, b)
     
-    def find_best_color_match(self, target_rgb: Tuple[int, int, int], 
-                             palette: Dict[Tuple[int, int, int], int]) -> int:
+    def find_best_color_match(self, target_rgb, palette):
         """Encontra a melhor correspondência de cor usando múltiplos métodos."""
         
         # Cache para evitar recálculos
@@ -217,7 +216,7 @@ class TermuxColorDetector:
         self.color_cache[cache_key] = best_index
         return best_index
     
-    def analyze_image_like_bluemarble(self, image_path: str, start_coord) -> Dict:
+    def analyze_image_like_bluemarble(self, image_path, start_coord):
         """Analisa imagem como o Blue Marble - divide em tiles e otimiza cores."""
         try:
             img = Image.open(image_path).convert("RGBA")
@@ -308,7 +307,7 @@ class TermuxColorDetector:
             logger.error(f"❌ Erro na análise Blue Marble: {e}")
             return {}
     
-    def optimize_color_palette_bluemarble(self, image_path: str) -> Dict[Tuple[int, int, int], int]:
+    def optimize_color_palette_bluemarble(self, image_path):
         """Otimiza paleta de cores como o Blue Marble."""
         try:
             img = Image.open(image_path).convert("RGB")
@@ -340,8 +339,7 @@ class TermuxColorDetector:
             logger.error(f"❌ Erro na otimização de paleta: {e}")
             return {}
     
-    def create_template_like_bluemarble(self, image_path: str, display_name: str, 
-                                      start_coord) -> Dict:
+    def create_template_like_bluemarble(self, image_path, display_name, start_coord):
         """Cria template como o Blue Marble com análise completa."""
         
         logger.info(f"🎨 Criando template Blue Marble: {display_name}")
@@ -382,7 +380,7 @@ class TermuxColorDetector:
         
         return template
     
-    def create_template_like_bluemarble_from_pil(self, img_pil, display_name: str, start_coord) -> Dict:
+    def create_template_like_bluemarble_from_pil(self, img_pil, display_name, start_coord):
         """Cria template Blue Marble diretamente de uma imagem PIL."""
         
         logger.info(f"🎨 Criando template Blue Marble: {display_name}")
@@ -419,7 +417,7 @@ class TermuxColorDetector:
         
         return template
     
-    def analyze_image_like_bluemarble_from_pil(self, img_pil, start_coord) -> Dict:
+    def analyze_image_like_bluemarble_from_pil(self, img_pil, start_coord):
         """Analisa imagem PIL como o Blue Marble - divide em tiles e otimiza cores."""
         try:
             # Converte para RGBA se necessário
@@ -605,7 +603,7 @@ class WplaceCoordinate:
             
         return WplaceCoordinate(new_tl_x, new_tl_y, new_px_x, new_px_y)
     
-    def to_absolute(self, tile_size: int = 1000) -> Tuple[int, int]:
+    def to_absolute(self, tile_size=1000):
         """Converte para coordenadas absolutas."""
         abs_x = self.tl_x * tile_size + self.px_x
         abs_y = self.tl_y * tile_size + self.px_y
@@ -632,7 +630,7 @@ class CookieManager:
         self.cookie_file = cookie_file
         self.cookies = self.load_cookies()
     
-    def load_cookies(self) -> List[str]:
+    def load_cookies(self):
         """Carrega cookies do arquivo JSON."""
         try:
             if os.path.exists(self.cookie_file):
@@ -682,7 +680,7 @@ class CookieManager:
             preview = cookie[:50] + "..." if len(cookie) > 50 else cookie
             print(f"   [{i}] {preview}")
     
-    def get_cookies(self) -> List[str]:
+    def get_cookies(self):
         """Retorna lista de cookies."""
         return self.cookies.copy()
 
@@ -695,8 +693,7 @@ class ProgressManager:
         self.lock = threading.Lock()
     
     def save_progress(self, image_path: str, start_coord: WplaceCoordinate, 
-                     completed_pixels: List[int], total_pixels: int, 
-                     pixel_map: Dict):
+                     completed_pixels, total_pixels, pixel_map):
         """Salva progresso atual."""
         with self.lock:
             self.progress_data = {
@@ -715,7 +712,7 @@ class ProgressManager:
             except Exception as e:
                 logger.error(f"Erro ao salvar progresso: {e}")
     
-    def load_progress(self) -> Optional[Dict]:
+    def load_progress(self):
         """Carrega progresso salvo."""
         try:
             if os.path.exists(self.backup_file):
@@ -770,7 +767,7 @@ class WplacePixelPainter:
             'Cookie': cookie
         })
     
-    def rgb_to_color_index(self, rgb: Tuple[int, int, int]) -> int:
+    def rgb_to_color_index(self, rgb):
         """Converte RGB para índice da paleta usando sistema avançado."""
         
         # Usa sistema avançado de detecção de cores
@@ -855,7 +852,7 @@ class WplacePixelPainter:
 class MultiPainterCoordinator:
     """Coordenador para múltiplos painters trabalharem em conjunto."""
     
-    def __init__(self, cookies: List[str], delay: float = 1.0):
+    def __init__(self, cookies, delay=1.0):
         self.cookies = cookies
         self.delay = delay
         self.painters = []
@@ -870,8 +867,7 @@ class MultiPainterCoordinator:
         
         logger.info(f"Coordenador inicializado com {len(self.painters)} painters")
     
-    def distribute_work(self, paint_sequence: List[Tuple[WplaceCoordinate, int]], 
-                       num_painters: int) -> List[List[Tuple[WplaceCoordinate, int]]]:
+    def distribute_work(self, paint_sequence, num_painters):
         """Distribui trabalho entre os painters evitando conflitos."""
         chunks = []
         chunk_size = len(paint_sequence) // num_painters
@@ -887,8 +883,7 @@ class MultiPainterCoordinator:
         
         return chunks
     
-    def paint_chunk(self, painter: WplacePixelPainter, chunk: List[Tuple[WplaceCoordinate, int]], 
-                   completed_pixels: List[int], pixel_map: Dict, chunk_id: int) -> int:
+    def paint_chunk(self, painter, chunk, completed_pixels, pixel_map, chunk_id):
         """Pinta um pedaço da imagem com um painter específico."""
         successful_paints = 0
         
@@ -924,7 +919,7 @@ class WplaceImageProcessor:
     def __init__(self, coordinator: MultiPainterCoordinator):
         self.coordinator = coordinator
     
-    def load_image(self, image_path: str) -> Optional[Image.Image]:
+    def load_image(self, image_path):
         """Carrega e valida imagem."""
         try:
             img = Image.open(image_path).convert("RGBA")
@@ -937,8 +932,7 @@ class WplaceImageProcessor:
             logger.error(f"Erro ao carregar imagem: {str(e)}")
             return None
     
-    def generate_paint_sequence(self, img: Image.Image, 
-                               start_coord: WplaceCoordinate) -> List[Tuple[WplaceCoordinate, int]]:
+    def generate_paint_sequence(self, img, start_coord):
         """Gera sequência de pixels usando sistema Blue Marble avançado."""
         
         logger.info(f"🎨 Iniciando análise Blue Marble pela coordenada: Tl({start_coord.tl_x},{start_coord.tl_y}) Px({start_coord.px_x},{start_coord.px_y})")
@@ -988,7 +982,7 @@ class WplaceImageProcessor:
         
         return paint_sequence
     
-    def _generate_traditional_sequence(self, img: Image.Image, start_coord: WplaceCoordinate):
+    def _generate_traditional_sequence(self, img, start_coord):
         """Método tradicional como fallback."""
         width, height = img.size
         pixels = img.load()
@@ -1043,7 +1037,7 @@ class WplaceImageProcessor:
         valid_pixels.sort(key=spiral_order)
         return [(pixel['coord'], pixel['color']) for pixel in valid_pixels]
     
-    def _optimize_paint_order_bluemarble(self, paint_sequence: List, template: Dict) -> List:
+    def _optimize_paint_order_bluemarble(self, paint_sequence, template):
         """Otimiza ordem de pintura como Blue Marble."""
         
         logger.info("🎯 Otimizando ordem de pintura estilo Blue Marble...")
@@ -1070,8 +1064,7 @@ class WplaceImageProcessor:
         
         return optimized_sequence
     
-    def paint_image(self, image_path: str, start_coord: WplaceCoordinate, 
-                   output_json: Optional[str] = None, resume: bool = False) -> bool:
+    def paint_image(self, image_path, start_coord, output_json=None, resume=False):
         """Processo principal de pintura da imagem com múltiplos painters."""
         print("🎨" + "="*60)
         print("🎨 INICIANDO PINTURA MULTI-PAINTER NO WPLACE.LIVE")
@@ -1110,7 +1103,7 @@ class WplaceImageProcessor:
         return self._execute_painting(paint_sequence, image_path, start_coord, 
                                     img, completed_pixels, pixel_map, output_json)
     
-    def resume_painting(self, output_json: Optional[str] = None) -> bool:
+    def resume_painting(self, output_json=None):
         """Continua pintura de onde parou."""
         progress = self.coordinator.progress_manager.load_progress()
         if not progress:
@@ -1150,10 +1143,8 @@ class WplaceImageProcessor:
         return self._execute_painting(remaining_sequence, progress['image_path'], 
                                     start_coord, img, completed_pixels, pixel_map, output_json)
     
-    def _execute_painting(self, paint_sequence: List[Tuple[WplaceCoordinate, int]], 
-                         image_path: str, start_coord: WplaceCoordinate, img: Image.Image,
-                         completed_pixels: List[int], pixel_map: Dict, 
-                         output_json: Optional[str] = None) -> bool:
+    def _execute_painting(self, paint_sequence, image_path, start_coord, img,
+                         completed_pixels, pixel_map, output_json=None):
         """Executa a pintura com múltiplos painters."""
         
         num_painters = len(self.coordinator.painters)
@@ -1231,7 +1222,7 @@ class WplaceImageProcessor:
         
         return total_successful > 0
     
-    def _show_bluemarble_stats(self, paint_sequence: List, successful_paints: int, num_painters: int):
+    def _show_bluemarble_stats(self, paint_sequence, successful_paints, num_painters):
         """Mostra estatísticas avançadas inspiradas no Blue Marble."""
         
         print("\n" + "="*60)
@@ -1276,9 +1267,7 @@ class WplaceImageProcessor:
         
         print("="*60)
     
-    def save_result_json(self, image_path: str, img: Image.Image, 
-                        start_coord: WplaceCoordinate, pixel_map: Dict, 
-                        output_path: str):
+    def save_result_json(self, image_path, img, start_coord, pixel_map, output_path):
         """Salva resultado em JSON."""
         try:
             abs_x, abs_y = start_coord.to_absolute()
