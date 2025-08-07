@@ -217,7 +217,7 @@ class TermuxColorDetector:
         self.color_cache[cache_key] = best_index
         return best_index
     
-    def analyze_image_like_bluemarble(self, image_path: str, start_coord: WplaceCoordinate) -> Dict:
+    def analyze_image_like_bluemarble(self, image_path: str, start_coord) -> Dict:
         """Analisa imagem como o Blue Marble - divide em tiles e otimiza cores."""
         try:
             img = Image.open(image_path).convert("RGBA")
@@ -259,8 +259,13 @@ class TermuxColorDetector:
                     px_x = wplace_x % self.tile_size
                     px_y = wplace_y % self.tile_size
                     
-                    # Cria coordenada final
-                    coord = WplaceCoordinate(tile_x, tile_y, px_x, px_y)
+                    # Cria coordenada final como dicionário (compatível)
+                    coord = {
+                        'tl_x': tile_x,
+                        'tl_y': tile_y, 
+                        'px_x': px_x,
+                        'px_y': px_y
+                    }
                     
                     # Mapeia cor (cache para performance)
                     rgb_color = (r, g, b)
@@ -336,7 +341,7 @@ class TermuxColorDetector:
             return {}
     
     def create_template_like_bluemarble(self, image_path: str, display_name: str, 
-                                      start_coord: WplaceCoordinate) -> Dict:
+                                      start_coord) -> Dict:
         """Cria template como o Blue Marble com análise completa."""
         
         logger.info(f"🎨 Criando template Blue Marble: {display_name}")
@@ -833,7 +838,14 @@ class WplaceImageProcessor:
         # Converte dados para formato de pintura
         paint_sequence = []
         for pixel in pixel_data:
-            coord = pixel['coord']
+            coord_dict = pixel['coord']
+            # Converte dicionário para WplaceCoordinate
+            coord = WplaceCoordinate(
+                coord_dict['tl_x'],
+                coord_dict['tl_y'], 
+                coord_dict['px_x'],
+                coord_dict['px_y']
+            )
             color_index = pixel['color_index']
             paint_sequence.append((coord, color_index))
         
