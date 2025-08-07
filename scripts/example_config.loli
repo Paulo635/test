@@ -1,0 +1,146 @@
+#METADATA
+Name = "Example Login Config"
+Author = "OpenBullet Python"
+Category = "Example"
+Version = "1.0"
+Description = "Demonstra login básico com parsing de dados"
+
+#SETTINGS
+MaxThreads = 20
+RequestDelay = 1000
+ProxyBanThreshold = 10
+CaptchaService = "2captcha"
+
+#SCRIPT
+
+// Configurar variáveis iniciais
+SET VAR "baseUrl" "https://httpbin.org"
+SET VAR "userAgent" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+
+LABEL:GetSessionToken
+REQUEST GET "<baseUrl>/get"
+HEADER "User-Agent" "<userAgent>"
+HEADER "Accept" "application/json"
+
+// Parsear token da resposta
+PARSE "sessionToken" LR "\"sessionToken\":\"" "\""
+
+// Verificar se token foi obtido
+IF <sessionToken> != ""
+  SET VAR "tokenObtained" "true"
+ENDIF
+
+LABEL:PrepareLoginData
+// Gerar timestamp único
+FUNCTION Timestamp "currentTime" "unix"
+
+// Criar hash MD5 da senha
+FUNCTION Hash "passwordHash" "md5" "<PASS>"
+
+// Encodar dados em base64
+FUNCTION Base64Encode "encodedData" "<USER>:<passwordHash>"
+
+LABEL:LoginRequest
+REQUEST POST "<baseUrl>/post"
+HEADER "User-Agent" "<userAgent>"
+HEADER "Content-Type" "application/json"
+HEADER "X-Session-Token" "<sessionToken>"
+DATA "{\"username\":\"<USER>\",\"password\":\"<passwordHash>\",\"timestamp\":\"<currentTime>\",\"encoded\":\"<encodedData>\"}"
+
+// Parsear resposta de login
+PARSE "loginResult" LR "\"result\":\"" "\""
+PARSE "userId" LR "\"userId\":" ","
+PARSE "accessToken" LR "\"accessToken\":\"" "\""
+
+// Verificar sucesso do login
+IF <loginResult> == "success"
+  LABEL:LoginSuccess
+  
+  // Obter informações adicionais do usuário
+  REQUEST GET "<baseUrl>/user/<userId>"
+  HEADER "Authorization" "Bearer <accessToken>"
+  
+  PARSE "userEmail" LR "\"email\":\"" "\""
+  PARSE "userLevel" LR "\"level\":" ","
+  PARSE "userBalance" LR "\"balance\":" "}"
+  
+  // Verificar se é conta premium
+  IF <userLevel> >= "5"
+    SET VAR "accountType" "premium"
+  ENDIF
+  
+  IF <userBalance> > "100"
+    SET VAR "hasBalance" "true"
+  ENDIF
+  
+ENDIF
+
+// Tratamento de erro para captcha
+IF <loginResult> == "captcha_required"
+  LABEL:SolveCaptcha
+  
+  // Aqui seria integrado o solver de captcha
+  PARSE "captchaSiteKey" LR "\"sitekey\":\"" "\""
+  PARSE "captchaUrl" LR "\"captcha_url\":\"" "\""
+  
+  // Simular resolução de captcha
+  SET VAR "captchaSolved" "true"
+  
+  // Retry login com captcha
+  REQUEST POST "<baseUrl>/post"
+  HEADER "User-Agent" "<userAgent>"
+  HEADER "Content-Type" "application/json"
+  DATA "{\"username\":\"<USER>\",\"password\":\"<passwordHash>\",\"captcha_response\":\"solved\"}"
+  
+ENDIF
+
+LABEL:CheckResult
+// Determinar resultado final baseado nas verificações
+IF <loginResult> == "success" AND <accessToken> != ""
+  // Config considera HIT se login foi bem-sucedido e token foi obtido
+  SET VAR "configResult" "HIT"
+ENDIF
+
+IF <loginResult> == "invalid_credentials"
+  SET VAR "configResult" "FAIL"
+ENDIF
+
+IF <loginResult> == "rate_limited" OR <loginResult> == "banned"
+  SET VAR "configResult" "BAN"
+ENDIF
+
+// Loop de exemplo para testar múltiplas tentativas
+FOR i FROM 1 TO 3
+  LABEL:RetryLoop
+  
+  // Função para gerar string aleatória
+  FUNCTION RandomString "randomId" "8" "0123456789abcdef"
+  
+  // Teste de conectividade
+  REQUEST GET "<baseUrl>/status"
+  HEADER "X-Request-ID" "<randomId>"
+  
+  PARSE "serverStatus" LR "\"status\":\"" "\""
+  
+  IF <serverStatus> == "ok"
+    // Servidor está funcionando
+    SET VAR "serverOk" "true"
+  ENDIF
+  
+ENDFOR
+
+// Exemplo de função personalizada para validação
+LABEL:ValidateResponse
+FUNCTION RegexMatch "responseValid" "\"status\":\s*\"(success|ok)\"" "<SOURCE>" "1"
+
+IF <responseValid> != ""
+  SET VAR "validResponse" "true"
+ENDIF
+
+// Limpeza e finalização
+LABEL:Cleanup
+// Função para converter texto para minúsculas
+FUNCTION ToLower "cleanResult" "<configResult>"
+
+// Log final do resultado
+SET VAR "finalMessage" "Config completed with result: <cleanResult>"
