@@ -54,7 +54,17 @@ class DropletMonitor:
             response = self.session.get(url)
             
             if response.status_code == 200:
-                data = response.json()
+                # Verifica se a resposta tem conteúdo
+                if not response.text.strip():
+                    logger.error("Resposta vazia do servidor")
+                    return None
+                
+                try:
+                    data = response.json()
+                except json.JSONDecodeError as e:
+                    logger.error(f"Erro ao decodificar JSON: {e}")
+                    logger.error(f"Resposta do servidor: {response.text[:200]}")
+                    return None
                 
                 user_info = UserInfo(
                     id=data.get('id', 0),
@@ -69,7 +79,7 @@ class DropletMonitor:
                 logger.info(f"Usuário: {user_info.name} | Droplets: {user_info.droplets} | Level: {user_info.level:.2f}")
                 return user_info
             else:
-                logger.error(f"Erro ao obter informações do usuário: {response.status_code}")
+                logger.error(f"Erro HTTP {response.status_code}: {response.text[:200]}")
                 return None
                 
         except Exception as e:
@@ -124,7 +134,16 @@ class AutoDropletManager:
             logger.warning(f"⚠️ Droplets baixos: {user_info.droplets} < {self.target_droplets}")
             logger.info("🛒 Tentando comprar droplets...")
             
-            return self.monitor.purchase_droplets()
+            # Tenta comprar apenas uma vez para evitar loop
+            success = self.monitor.purchase_droplets()
+            if success:
+                logger.info("✅ Compra de droplets realizada com sucesso")
+                # Aguarda um pouco para o servidor processar
+                time.sleep(2)
+            else:
+                logger.warning("❌ Falha na compra de droplets - aguardando recarga natural")
+            
+            return success
         
         return True
     
@@ -431,6 +450,7 @@ class WplacePixelPainter:
         self.delay = delay
         self.session = requests.Session()
         self.painted_count = 0
+        self.droplet_retry_count = 0  # Contador de tentativas de compra
         
         # Adicionar gerenciador de droplets
         self.droplet_manager = AutoDropletManager(cookie)
@@ -490,12 +510,21 @@ class WplacePixelPainter:
                         current_droplets = self.droplet_manager.get_current_droplets()
                         logger.info(f"[P{self.painter_id}] Droplets atuais: {current_droplets}")
                         
-                        if current_droplets < 500:
-                            logger.info(f"[P{self.painter_id}] Droplets baixos! Tentando comprar...")
+                        # Tenta comprar droplets apenas se não conseguir obter informações e não excedeu tentativas
+                        if current_droplets == 0 and self.droplet_retry_count < 3:
+                            logger.info(f"[P{self.painter_id}] Droplets baixos! Tentando comprar... (tentativa {self.droplet_retry_count + 1}/3)")
                             if self.droplet_manager.check_and_buy_if_needed():
                                 logger.info(f"[P{self.painter_id}] ✅ Droplets comprados com sucesso!")
+                                self.droplet_retry_count = 0  # Reset contador
                                 # Continua imediatamente após compra
                                 continue
+                            else:
+                                self.droplet_retry_count += 1
+                                logger.warning(f"[P{self.painter_id}] Falha na compra de droplets (tentativa {self.droplet_retry_count}/3)")
+                        
+                        # Se não conseguiu comprar ou droplets ainda baixos, pausa
+                        if self.droplet_retry_count >= 3:
+                            logger.warning(f"[P{self.painter_id}] Muitas tentativas de compra falharam - aguardando recarga natural")
                         
                         logger.info(f"[P{self.painter_id}] Pausando 30 segundos para recarregar tinta...")
                         
