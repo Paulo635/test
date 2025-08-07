@@ -152,12 +152,14 @@ class AutoDropletManager:
         user_info = self.monitor.get_user_info()
         return user_info.droplets if user_info else 0
 
-# Sistema de detecção de cores compatível com Termux
+# Sistema de detecção de cores compatível com Termux inspirado no Blue Marble
 class TermuxColorDetector:
-    """Sistema de detecção de cores otimizado para Termux."""
+    """Sistema de detecção de cores otimizado para Termux inspirado no Blue Marble."""
     
     def __init__(self):
         self.color_cache = {}
+        self.template_cache = {}
+        self.tile_size = 1000  # Tamanho do tile como no Blue Marble
     
     def rgb_to_hsv(self, rgb: Tuple[int, int, int]) -> Tuple[float, float, float]:
         """Converte RGB para HSV."""
@@ -214,6 +216,166 @@ class TermuxColorDetector:
         
         self.color_cache[cache_key] = best_index
         return best_index
+    
+    def analyze_image_like_bluemarble(self, image_path: str, start_coord: WplaceCoordinate) -> Dict:
+        """Analisa imagem como o Blue Marble - divide em tiles e otimiza cores."""
+        try:
+            img = Image.open(image_path).convert("RGBA")
+            width, height = img.size
+            
+            logger.info(f"🎨 Analisando imagem como Blue Marble: {width}x{height}")
+            
+            # Estatísticas da análise
+            stats = {
+                'total_pixels': width * height,
+                'valid_pixels': 0,
+                'tiles_created': 0,
+                'colors_mapped': 0,
+                'coverage_area': {}
+            }
+            
+            # Mapeamento de cores otimizado
+            color_mapping = {}
+            pixel_data = []
+            
+            # Analisa pixel por pixel como o Blue Marble
+            for img_y in range(height):
+                for img_x in range(width):
+                    r, g, b, a = img.getpixel((img_x, img_y))
+                    
+                    # Ignora pixels transparentes
+                    if a == 0:
+                        continue
+                    
+                    stats['valid_pixels'] += 1
+                    
+                    # Calcula coordenada Wplace
+                    wplace_x = start_coord.px_x + img_x
+                    wplace_y = start_coord.px_y + img_y
+                    
+                    # Calcula tile (como Blue Marble)
+                    tile_x = start_coord.tl_x + (wplace_x // self.tile_size)
+                    tile_y = start_coord.tl_y + (wplace_y // self.tile_size)
+                    px_x = wplace_x % self.tile_size
+                    px_y = wplace_y % self.tile_size
+                    
+                    # Cria coordenada final
+                    coord = WplaceCoordinate(tile_x, tile_y, px_x, px_y)
+                    
+                    # Mapeia cor (cache para performance)
+                    rgb_color = (r, g, b)
+                    if rgb_color not in color_mapping:
+                        color_index = self.find_best_color_match(rgb_color, COLOR_PALETTE)
+                        color_mapping[rgb_color] = color_index
+                        stats['colors_mapped'] += 1
+                    
+                    pixel_data.append({
+                        'coord': coord,
+                        'color_index': color_mapping[rgb_color],
+                        'original_rgb': rgb_color,
+                        'image_pos': (img_x, img_y)
+                    })
+                    
+                    # Rastreia cobertura de tiles
+                    tile_key = f"{tile_x},{tile_y}"
+                    if tile_key not in stats['coverage_area']:
+                        stats['coverage_area'][tile_key] = 0
+                        stats['tiles_created'] += 1
+                    stats['coverage_area'][tile_key] += 1
+            
+            logger.info(f"🎯 Análise Blue Marble concluída:")
+            logger.info(f"   📊 Pixels válidos: {stats['valid_pixels']:,}")
+            logger.info(f"   🎨 Cores únicas: {stats['colors_mapped']}")
+            logger.info(f"   🗂️ Tiles criados: {stats['tiles_created']}")
+            
+            return {
+                'pixel_data': pixel_data,
+                'color_mapping': color_mapping,
+                'stats': stats,
+                'image_info': {
+                    'width': width,
+                    'height': height,
+                    'path': image_path
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Erro na análise Blue Marble: {e}")
+            return {}
+    
+    def optimize_color_palette_bluemarble(self, image_path: str) -> Dict[Tuple[int, int, int], int]:
+        """Otimiza paleta de cores como o Blue Marble."""
+        try:
+            img = Image.open(image_path).convert("RGB")
+            
+            # Coleta cores únicas da imagem
+            unique_colors = set()
+            width, height = img.size
+            
+            # Amostragem inteligente (como Blue Marble)
+            sample_step = max(1, min(width, height) // 100)  # Amostra 1% dos pixels
+            
+            for y in range(0, height, sample_step):
+                for x in range(0, width, sample_step):
+                    rgb = img.getpixel((x, y))
+                    unique_colors.add(rgb)
+            
+            logger.info(f"🎨 Encontradas {len(unique_colors)} cores únicas na imagem")
+            
+            # Mapeia cada cor única para a paleta Wplace
+            optimized_mapping = {}
+            for rgb in unique_colors:
+                best_match = self.find_best_color_match(rgb, COLOR_PALETTE)
+                optimized_mapping[rgb] = best_match
+            
+            logger.info(f"✅ Paleta otimizada criada com {len(optimized_mapping)} mapeamentos")
+            return optimized_mapping
+            
+        except Exception as e:
+            logger.error(f"❌ Erro na otimização de paleta: {e}")
+            return {}
+    
+    def create_template_like_bluemarble(self, image_path: str, display_name: str, 
+                                      start_coord: WplaceCoordinate) -> Dict:
+        """Cria template como o Blue Marble com análise completa."""
+        
+        logger.info(f"🎨 Criando template Blue Marble: {display_name}")
+        
+        # Análise completa da imagem
+        analysis = self.analyze_image_like_bluemarble(image_path, start_coord)
+        
+        if not analysis:
+            return {}
+        
+        # Otimização de paleta
+        optimized_palette = self.optimize_color_palette_bluemarble(image_path)
+        
+        # Cria template final
+        template = {
+            'display_name': display_name,
+            'image_path': image_path,
+            'start_coordinate': {
+                'tl_x': start_coord.tl_x,
+                'tl_y': start_coord.tl_y,
+                'px_x': start_coord.px_x,
+                'px_y': start_coord.px_y
+            },
+            'analysis': analysis,
+            'optimized_palette': optimized_palette,
+            'created_at': time.strftime("%Y-%m-%d %H:%M:%S"),
+            'total_pixels': analysis['stats']['valid_pixels'],
+            'tiles_count': analysis['stats']['tiles_created']
+        }
+        
+        # Cache o template
+        self.template_cache[display_name] = template
+        
+        logger.info(f"✅ Template Blue Marble criado:")
+        logger.info(f"   📛 Nome: {display_name}")
+        logger.info(f"   📊 Pixels: {template['total_pixels']:,}")
+        logger.info(f"   🗂️ Tiles: {template['tiles_count']}")
+        
+        return template
 
 # Configuração de logging
 logging.basicConfig(
@@ -641,24 +803,61 @@ class WplaceImageProcessor:
     
     def generate_paint_sequence(self, img: Image.Image, 
                                start_coord: WplaceCoordinate) -> List[Tuple[WplaceCoordinate, int]]:
-        """Gera sequência de pixels para pintar em espiral começando pelo centro da imagem."""
+        """Gera sequência de pixels usando sistema Blue Marble avançado."""
+        
+        logger.info(f"🎨 Iniciando análise Blue Marble pela coordenada: Tl({start_coord.tl_x},{start_coord.tl_y}) Px({start_coord.px_x},{start_coord.px_y})")
+        
+        # Usa detector avançado Blue Marble
+        detector = TermuxColorDetector()
+        
+        # Cria template Blue Marble para análise completa
+        template = detector.create_template_like_bluemarble(
+            img.filename if hasattr(img, 'filename') else "temp_image",
+            "Current_Paint_Job",
+            start_coord
+        )
+        
+        if not template:
+            logger.warning("⚠️ Falha na análise Blue Marble, usando método tradicional")
+            return self._generate_traditional_sequence(img, start_coord)
+        
+        # Extrai dados do template Blue Marble
+        pixel_data = template['analysis']['pixel_data']
+        stats = template['analysis']['stats']
+        
+        logger.info(f"🎯 Análise Blue Marble concluída:")
+        logger.info(f"   📊 Pixels válidos: {stats['valid_pixels']:,}")
+        logger.info(f"   🎨 Cores únicas: {stats['colors_mapped']}")
+        logger.info(f"   🗂️ Tiles cobertos: {stats['tiles_created']}")
+        
+        # Converte dados para formato de pintura
+        paint_sequence = []
+        for pixel in pixel_data:
+            coord = pixel['coord']
+            color_index = pixel['color_index']
+            paint_sequence.append((coord, color_index))
+        
+        # Ordena por estratégia otimizada (inspirada no Blue Marble)
+        paint_sequence = self._optimize_paint_order_bluemarble(paint_sequence, template)
+        
+        logger.info(f"✅ Sequência Blue Marble gerada: {len(paint_sequence)} pixels para pintar")
+        
+        return paint_sequence
+    
+    def _generate_traditional_sequence(self, img: Image.Image, start_coord: WplaceCoordinate):
+        """Método tradicional como fallback."""
         width, height = img.size
         pixels = img.load()
         
-        logger.info(f"Iniciando pela coordenada: Tl({start_coord.tl_x},{start_coord.tl_y}) Px({start_coord.px_x},{start_coord.px_y})")
-        
-        # Coletar todos os pixels válidos primeiro
         valid_pixels = []
         
         for img_y in range(height):
             for img_x in range(width):
                 r, g, b, a = pixels[img_x, img_y]
                 
-                # Ignora apenas pixels transparentes
                 if a == 0:
                     continue
                 
-                # Calcula coordenada do Wplace para este pixel da imagem
                 current_coord = WplaceCoordinate(
                     start_coord.tl_x,
                     start_coord.tl_y,
@@ -666,7 +865,6 @@ class WplaceImageProcessor:
                     start_coord.px_y + img_y
                 )
                 
-                # Ajusta coordenada se ultrapassar os limites do tile
                 if current_coord.px_x >= 1000:
                     current_coord.tl_x += current_coord.px_x // 1000
                     current_coord.px_x %= 1000
@@ -674,11 +872,8 @@ class WplaceImageProcessor:
                     current_coord.tl_y += current_coord.px_y // 1000
                     current_coord.px_y %= 1000
                 
-                # Mapeia cor
                 if len(self.coordinator.painters) > 0:
                     color_index = self.coordinator.painters[0].rgb_to_color_index((r, g, b))
-                    
-                    # Armazena pixel com informações extras para ordenação em espiral
                     valid_pixels.append({
                         'coord': current_coord,
                         'color': color_index,
@@ -686,39 +881,50 @@ class WplaceImageProcessor:
                         'img_y': img_y
                     })
         
-        # Ordena pixels em forma de espiral começando do centro
+        # Ordena em espiral
         center_x = width // 2
         center_y = height // 2
         
         def spiral_order(pixel):
             x = pixel['img_x']
             y = pixel['img_y']
-            
-            # Calcula distância do centro
             dx = x - center_x
             dy = y - center_y
             distance = math.sqrt(dx * dx + dy * dy)
-            
-            # Calcula ângulo para ordenar em espiral
             angle = math.atan2(dy, dx)
-            
-            # Converte ângulo para 0-2π para ordenação consistente
             if angle < 0:
                 angle += 2 * math.pi
-            
-            # Ordena primeiro por distância (círculos concêntricos), depois por ângulo (espiral)
             return (distance, angle)
         
-        # Ordena por distância do centro em espiral
         valid_pixels.sort(key=spiral_order)
+        return [(pixel['coord'], pixel['color']) for pixel in valid_pixels]
+    
+    def _optimize_paint_order_bluemarble(self, paint_sequence: List, template: Dict) -> List:
+        """Otimiza ordem de pintura como Blue Marble."""
         
-        # Converte para formato final
-        paint_sequence = [(pixel['coord'], pixel['color']) for pixel in valid_pixels]
+        logger.info("🎯 Otimizando ordem de pintura estilo Blue Marble...")
         
-        logger.info(f"Sequência em espiral gerada: {len(paint_sequence)} pixels para pintar (centro → bordas)")
-        logger.info(f"Centro da imagem: ({center_x}, {center_y})")
+        # Agrupa por tiles (como Blue Marble faz)
+        tiles_groups = {}
+        for coord, color_index in paint_sequence:
+            tile_key = f"{coord.tl_x},{coord.tl_y}"
+            if tile_key not in tiles_groups:
+                tiles_groups[tile_key] = []
+            tiles_groups[tile_key].append((coord, color_index))
         
-        return paint_sequence
+        # Ordena tiles por prioridade
+        sorted_tiles = sorted(tiles_groups.items(), key=lambda x: len(x[1]), reverse=True)
+        
+        # Reconstrói sequência otimizada
+        optimized_sequence = []
+        for tile_key, pixels in sorted_tiles:
+            # Ordena pixels dentro do tile
+            pixels.sort(key=lambda x: (x[0].px_y, x[0].px_x))  # Ordem linha por linha
+            optimized_sequence.extend(pixels)
+        
+        logger.info(f"✅ Ordem otimizada: {len(tiles_groups)} tiles organizados")
+        
+        return optimized_sequence
     
     def paint_image(self, image_path: str, start_coord: WplaceCoordinate, 
                    output_json: Optional[str] = None, resume: bool = False) -> bool:
@@ -876,7 +1082,55 @@ class WplaceImageProcessor:
         for i, painter in enumerate(self.coordinator.painters):
             print(f"   Painter {i+1}: {painter.painted_count} pixels")
         
+        # Estatísticas avançadas estilo Blue Marble
+        self._show_bluemarble_stats(paint_sequence, total_successful, num_painters)
+        
         return total_successful > 0
+    
+    def _show_bluemarble_stats(self, paint_sequence: List, successful_paints: int, num_painters: int):
+        """Mostra estatísticas avançadas inspiradas no Blue Marble."""
+        
+        print("\n" + "="*60)
+        print("🎨 ESTATÍSTICAS BLUE MARBLE")
+        print("="*60)
+        
+        # Análise de tiles
+        tiles_used = set()
+        colors_used = set()
+        
+        for coord, color_index in paint_sequence:
+            tiles_used.add(f"{coord.tl_x},{coord.tl_y}")
+            colors_used.add(color_index)
+        
+        # Estatísticas detalhadas
+        total_pixels = len(paint_sequence)
+        success_rate = (successful_paints / total_pixels * 100) if total_pixels > 0 else 0
+        
+        print(f"📊 Pixels totais: {total_pixels:,}")
+        print(f"✅ Pixels pintados: {successful_paints:,}")
+        print(f"📈 Taxa de sucesso: {success_rate:.1f}%")
+        print(f"🗂️ Tiles únicos: {len(tiles_used)}")
+        print(f"🎨 Cores únicas: {len(colors_used)}")
+        print(f"👥 Painters usados: {num_painters}")
+        
+        # Análise de performance
+        if total_pixels > 0:
+            pixels_per_painter = total_pixels // num_painters if num_painters > 0 else 0
+            print(f"⚖️ Pixels por painter: ~{pixels_per_painter:,}")
+        
+        # Mapa de cores mais usadas
+        color_usage = {}
+        for _, color_index in paint_sequence:
+            color_usage[color_index] = color_usage.get(color_index, 0) + 1
+        
+        if color_usage:
+            top_colors = sorted(color_usage.items(), key=lambda x: x[1], reverse=True)[:5]
+            print(f"\n🎨 TOP 5 CORES MAIS USADAS:")
+            for i, (color_index, count) in enumerate(top_colors, 1):
+                percentage = (count / total_pixels * 100) if total_pixels > 0 else 0
+                print(f"   {i}. Cor {color_index}: {count:,} pixels ({percentage:.1f}%)")
+        
+        print("="*60)
     
     def save_result_json(self, image_path: str, img: Image.Image, 
                         start_coord: WplaceCoordinate, pixel_map: Dict, 
