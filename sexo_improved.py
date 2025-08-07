@@ -12,6 +12,13 @@ from dataclasses import dataclass, asdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 
+# Import do sistema de droplets
+try:
+    from droplet_monitor import AutoDropletManager
+except ImportError:
+    print("⚠️ Sistema de droplets não disponível. Instalando dependências...")
+    AutoDropletManager = None
+
 # Configuração de logging
 logging.basicConfig(
     level=logging.INFO,
@@ -247,6 +254,10 @@ class WplacePixelPainter:
         self.delay = delay
         self.session = requests.Session()
         self.painted_count = 0
+        
+        # Adicionar gerenciador de droplets
+        self.droplet_manager = AutoDropletManager(cookie)
+        
         self.session.headers.update({
             'User-Agent': "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36 EdgA/139.0.0.0",
             'Accept-Encoding': "gzip, deflate, br, zstd",
@@ -286,7 +297,7 @@ class WplacePixelPainter:
         return best_index
     
     def paint_pixel(self, coord: WplaceCoordinate, color_index: int) -> bool:
-        """Pinta um pixel no Wplace.live com tratamento de erro 403."""
+        """Pinta um pixel no Wplace.live com tratamento de erro 403 e monitoramento de droplets."""
         if not coord.is_valid():
             logger.error(f"[P{self.painter_id}] Coordenada inválida: Tl({coord.tl_x},{coord.tl_y}) Px({coord.px_x},{coord.px_y})")
             return False
@@ -311,6 +322,18 @@ class WplacePixelPainter:
                         error_data = response.json()
                         charges = error_data.get('charges', 0)
                         logger.warning(f"[P{self.painter_id}] Sem tinta! Charges: {charges:.3f}")
+                        
+                        # Verifica droplets antes de pausar
+                        current_droplets = self.droplet_manager.get_current_droplets()
+                        logger.info(f"[P{self.painter_id}] Droplets atuais: {current_droplets}")
+                        
+                        if current_droplets < 500:
+                            logger.info(f"[P{self.painter_id}] Droplets baixos! Tentando comprar...")
+                            if self.droplet_manager.check_and_buy_if_needed():
+                                logger.info(f"[P{self.painter_id}] ✅ Droplets comprados com sucesso!")
+                                # Continua imediatamente após compra
+                                continue
+                        
                         logger.info(f"[P{self.painter_id}] Pausando 30 segundos para recarregar tinta...")
                         
                         # Countdown de 30 segundos
@@ -847,6 +870,22 @@ def start_new_painting(cookie_manager: CookieManager):
             print("❌ Delay deve ser não-negativo")
             return
         
+        # Configuração de droplets
+        print("\n💰 CONFIGURAÇÃO DE DROPLETS:")
+        print("   [1] Monitoramento automático (recomendado)")
+        print("   [2] Sem monitoramento")
+        
+        droplet_choice = input("\nEscolha (1 ou 2): ").strip()
+        
+        if droplet_choice == "1":
+            target_droplets = int(input("Meta de droplets [500]: ") or "500")
+            check_interval = int(input("Check a cada quantos segundos [30]: ") or "30")
+            auto_droplets = True
+        else:
+            auto_droplets = False
+            target_droplets = 500
+            check_interval = 30
+        
         print("\n" + "="*60)
         print("🔧 CONFIGURAÇÃO:")
         print(f"   📁 Imagem: {image_path}")
@@ -857,6 +896,10 @@ def start_new_painting(cookie_manager: CookieManager):
             print(f"   🗺️ Local: Tile customizado ({tl_x},{tl_y})")
         print(f"   📍 Início: Px({px_x},{px_y})")
         print(f"   ⏱️ Delay: {delay}s por painter")
+        if auto_droplets:
+            print(f"   💰 Droplets: Monitoramento automático (meta: {target_droplets})")
+        else:
+            print(f"   💰 Droplets: Sem monitoramento")
         print("="*60)
         
         # Confirma início
@@ -869,6 +912,20 @@ def start_new_painting(cookie_manager: CookieManager):
         start_coord = WplaceCoordinate(tl_x, tl_y, px_x, px_y)
         coordinator = MultiPainterCoordinator(selected_cookies, delay)
         processor = WplaceImageProcessor(coordinator)
+        
+        # Inicia monitoramento de droplets se habilitado
+        if auto_droplets:
+            print(f"\n💰 Iniciando monitoramento de droplets...")
+            # Inicia monitoramento em thread separada
+            import threading
+            droplet_thread = threading.Thread(
+                target=lambda: coordinator.painters[0].droplet_manager.start_monitoring(
+                    target_droplets, check_interval
+                ),
+                daemon=True
+            )
+            droplet_thread.start()
+            print(f"✅ Monitoramento iniciado em background")
         
         # Executa pintura
         success = processor.paint_image(image_path, start_coord, output_json, resume=False)
