@@ -19,6 +19,14 @@ except ImportError:
     print("⚠️ Sistema de droplets não disponível. Instalando dependências...")
     AutoDropletManager = None
 
+# Import do sistema de cores compatível com Termux
+try:
+    from color_detector_termux import TermuxColorDetector, WPLACE_PALETTE
+except ImportError:
+    print("⚠️ Sistema de cores não disponível. Usando sistema básico...")
+    TermuxColorDetector = None
+    WPLACE_PALETTE = COLOR_PALETTE
+
 # Configuração de logging
 logging.basicConfig(
     level=logging.INFO,
@@ -276,7 +284,15 @@ class WplacePixelPainter:
         })
     
     def rgb_to_color_index(self, rgb: Tuple[int, int, int]) -> int:
-        """Converte RGB para índice da paleta usando correspondência exata."""
+        """Converte RGB para índice da paleta usando sistema compatível com Termux."""
+        
+        # Usa sistema avançado se disponível
+        if TermuxColorDetector is not None:
+            # Cria detector temporário
+            detector = TermuxColorDetector()
+            return detector.find_best_color_match(rgb, WPLACE_PALETTE)
+        
+        # Fallback para sistema básico
         # Tentar correspondência exata primeiro
         if rgb in COLOR_MAP:
             return COLOR_MAP[rgb]
