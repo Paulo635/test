@@ -381,6 +381,137 @@ class TermuxColorDetector:
         logger.info(f"   🗂️ Tiles: {template['tiles_count']}")
         
         return template
+    
+    def create_template_like_bluemarble_from_pil(self, img_pil, display_name: str, start_coord) -> Dict:
+        """Cria template Blue Marble diretamente de uma imagem PIL."""
+        
+        logger.info(f"🎨 Criando template Blue Marble: {display_name}")
+        
+        # Análise completa da imagem PIL
+        analysis = self.analyze_image_like_bluemarble_from_pil(img_pil, start_coord)
+        
+        if not analysis:
+            return {}
+        
+        # Cria template final
+        template = {
+            'display_name': display_name,
+            'image_source': 'PIL_Image',
+            'start_coordinate': {
+                'tl_x': start_coord.tl_x,
+                'tl_y': start_coord.tl_y,
+                'px_x': start_coord.px_x,
+                'px_y': start_coord.px_y
+            },
+            'analysis': analysis,
+            'created_at': time.strftime("%Y-%m-%d %H:%M:%S"),
+            'total_pixels': analysis['stats']['valid_pixels'],
+            'tiles_count': analysis['stats']['tiles_created']
+        }
+        
+        # Cache o template
+        self.template_cache[display_name] = template
+        
+        logger.info(f"✅ Template Blue Marble criado:")
+        logger.info(f"   📛 Nome: {display_name}")
+        logger.info(f"   📊 Pixels: {template['total_pixels']:,}")
+        logger.info(f"   🗂️ Tiles: {template['tiles_count']}")
+        
+        return template
+    
+    def analyze_image_like_bluemarble_from_pil(self, img_pil, start_coord) -> Dict:
+        """Analisa imagem PIL como o Blue Marble - divide em tiles e otimiza cores."""
+        try:
+            # Converte para RGBA se necessário
+            if img_pil.mode != 'RGBA':
+                img_pil = img_pil.convert("RGBA")
+            
+            width, height = img_pil.size
+            
+            logger.info(f"🎨 Analisando imagem como Blue Marble: {width}x{height}")
+            
+            # Estatísticas da análise
+            stats = {
+                'total_pixels': width * height,
+                'valid_pixels': 0,
+                'tiles_created': 0,
+                'colors_mapped': 0,
+                'coverage_area': {}
+            }
+            
+            # Mapeamento de cores otimizado
+            color_mapping = {}
+            pixel_data = []
+            
+            # Analisa pixel por pixel como o Blue Marble
+            for img_y in range(height):
+                for img_x in range(width):
+                    r, g, b, a = img_pil.getpixel((img_x, img_y))
+                    
+                    # Ignora pixels transparentes
+                    if a == 0:
+                        continue
+                    
+                    stats['valid_pixels'] += 1
+                    
+                    # Calcula coordenada Wplace
+                    wplace_x = start_coord.px_x + img_x
+                    wplace_y = start_coord.px_y + img_y
+                    
+                    # Calcula tile (como Blue Marble)
+                    tile_x = start_coord.tl_x + (wplace_x // self.tile_size)
+                    tile_y = start_coord.tl_y + (wplace_y // self.tile_size)
+                    px_x = wplace_x % self.tile_size
+                    px_y = wplace_y % self.tile_size
+                    
+                    # Cria coordenada final como dicionário (compatível)
+                    coord = {
+                        'tl_x': tile_x,
+                        'tl_y': tile_y, 
+                        'px_x': px_x,
+                        'px_y': px_y
+                    }
+                    
+                    # Mapeia cor (cache para performance)
+                    rgb_color = (r, g, b)
+                    if rgb_color not in color_mapping:
+                        color_index = self.find_best_color_match(rgb_color, COLOR_PALETTE)
+                        color_mapping[rgb_color] = color_index
+                        stats['colors_mapped'] += 1
+                    
+                    pixel_data.append({
+                        'coord': coord,
+                        'color_index': color_mapping[rgb_color],
+                        'original_rgb': rgb_color,
+                        'image_pos': (img_x, img_y)
+                    })
+                    
+                    # Rastreia cobertura de tiles
+                    tile_key = f"{tile_x},{tile_y}"
+                    if tile_key not in stats['coverage_area']:
+                        stats['coverage_area'][tile_key] = 0
+                        stats['tiles_created'] += 1
+                    stats['coverage_area'][tile_key] += 1
+            
+            logger.info(f"🎯 Análise Blue Marble concluída:")
+            logger.info(f"   📊 Pixels válidos: {stats['valid_pixels']:,}")
+            logger.info(f"   🎨 Cores únicas: {stats['colors_mapped']}")
+            logger.info(f"   🗂️ Tiles criados: {stats['tiles_created']}")
+            
+            return {
+                'pixel_data': pixel_data,
+                'color_mapping': color_mapping,
+                'stats': stats,
+                'image_info': {
+                    'width': width,
+                    'height': height,
+                    'source': 'PIL_Image'
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Erro na análise Blue Marble PIL: {e}")
+            return {}
 
 # Configuração de logging
 logging.basicConfig(
@@ -816,8 +947,9 @@ class WplaceImageProcessor:
         detector = TermuxColorDetector()
         
         # Cria template Blue Marble para análise completa
-        template = detector.create_template_like_bluemarble(
-            img.filename if hasattr(img, 'filename') else "temp_image",
+        # Usa a imagem PIL diretamente ao invés do caminho
+        template = detector.create_template_like_bluemarble_from_pil(
+            img,
             "Current_Paint_Job",
             start_coord
         )
