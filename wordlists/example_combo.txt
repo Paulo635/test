@@ -1,0 +1,15 @@
+admin:admin123
+test:password
+user:123456
+demo:demo123
+guest:guest
+root:toor
+administrator:admin
+testuser:test123
+example:example123
+sample:sample456
+webmaster:webmaster
+support:support123
+moderator:mod123
+operator:operator
+service:service123
